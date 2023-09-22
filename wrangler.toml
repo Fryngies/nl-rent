@@ -2,8 +2,12 @@ name = "nl-rent-scrapper-cf"
 main = "src/index.ts"
 compatibility_date = "2023-05-15"
 
+kv_namespaces = [
+	{ binding = "nlRentScrapper", id = "36cee5bba08d40da949f0c5b98ffa9f0" }
+]
+
 # Cron Triggers
 # Docs: https://developers.cloudflare.com/workers/platform/triggers/cron-triggers/
 # Configuration: https://developers.cloudflare.com/workers/wrangler/configuration/#triggers
 [triggers]
-crons = ["* * * * *"] # * * * * * = run every minute
+crons = ["*/5 * * * *"]
