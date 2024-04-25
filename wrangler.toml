@@ -10,4 +10,4 @@ kv_namespaces = [
 # Docs: https://developers.cloudflare.com/workers/platform/triggers/cron-triggers/
 # Configuration: https://developers.cloudflare.com/workers/wrangler/configuration/#triggers
 [triggers]
-crons = ["*/1 * * * *"]
+crons = ["*/15 * * * *"]
