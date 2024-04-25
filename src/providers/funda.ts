@@ -47,9 +47,9 @@ export const parseAd = (root: HTMLElement): Option.Option<Ad> => {
 	const urlInfo = pipe(
 		url,
 		Option.flatMap(
-			// https://www.funda.nl/huur/amsterdam/appartement-42218036-hellingbaan-394/
+			// https://www.funda.nl/detail/huur/amsterdam/appartement-frans-van-mierisstraat-69-ii/43448018/
 			String.match(
-				/https:\/\/www\.funda\.nl\/(\w+)\/([\w\d]+)\/(\w+)-(\d+)-([\w\d-]+)/,
+				/https:\/\/www\.funda\.nl\/detail\/(\w+)\/([\w\d]+)\/(\w+)-[\w\d-]+\/([\d]+)/,
 			),
 		),
 		Option.flatMap((matches: unknown[]) => {

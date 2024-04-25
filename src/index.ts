@@ -7,6 +7,8 @@ import {
 	flow,
 	pipe,
 	String,
+	Logger,
+	LogLevel,
 } from 'effect';
 import { Ad } from './ad';
 import {
@@ -152,11 +154,12 @@ export default {
 			Effect.provideServiceEffect(AdIdStorage, newAdIdStorageLive('funda')),
 		);
 
-		const pararus = task(PARARIUS_SOURCES).pipe(
-			Effect.provideServiceEffect(AdIdStorage, newAdIdStorageLive('pararus')),
-		);
+		// const pararius = task(PARARIUS_SOURCES).pipe(
+		// 	Effect.provideServiceEffect(AdIdStorage, newAdIdStorageLive('pararius')),
+		// );
+		const pararius = Effect.succeed(undefined);
 
-		return Effect.all([funda, pararus], { concurrency: 'unbounded' }).pipe(
+		return Effect.all([funda, pararius], { concurrency: 'unbounded' }).pipe(
 			Effect.map(() => undefined),
 			Effect.provideServiceEffect(
 				TelegramChatService,
@@ -166,6 +169,7 @@ export default {
 				Layer.merge(KeyValueCFStoreLayer, HttpClient.client.layer),
 			),
 			Effect.provideService(KVNamespace, env.nlRentScrapper),
+			Logger.withMinimumLogLevel(LogLevel.Debug),
 			Effect.runPromise,
 		);
 	},

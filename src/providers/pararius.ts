@@ -17,17 +17,17 @@ export const parseAd = (root: HTMLElement): Option.Option<Ad> => {
 		Option.flatMap(
 			String.match(
 				// /apartment-for-rent/amsterdam/8b52839a/kleiburg
-				/^\/(\w+)-for-(\w+)\/([\w\d-]+)\/([\w\d]+)\/([\w\d-]+)$/,
+				/^\/(\w+)-for-(\w+)\/([\w\d-]+)\/([\w\d]+)\//,
 			),
 		),
 		Option.flatMap((matches) => {
-			const [url, propertyType, type, city, id] = matches;
+			const [path, propertyType, type, city, id] = matches;
 
 			return pipe(
 				id,
 				S.parseOption(AdId),
 				Option.map((id) => ({
-					url: `https://www.pararius.com${url}`,
+					url: `https://www.pararius.com${path}`,
 					id,
 					city: S.parseOption(S.string)(city).pipe(
 						Option.map(
@@ -121,13 +121,15 @@ export const runFor = (url: string) =>
 	Effect.gen(function* (_) {
 		const response = yield* _(getText(url));
 
-		yield* _(Effect.logDebug(`${url} got response ${response.slice(0, 20)}`));
+		yield* _(Effect.logDebug(`${url} got response ${response}`));
 
 		const node = yield* _(parseHtml(response));
 
 		const results = node.querySelectorAll(
 			'.search-list li.search-list__item--listing',
 		);
+
+		yield* _(Effect.logDebug(`${results.length} items`));
 
 		const ads = pipe(
 			results,
