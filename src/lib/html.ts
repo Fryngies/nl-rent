@@ -3,7 +3,10 @@ import { Either } from 'effect';
 
 export class HtmlParseError extends Error {
 	readonly _tag = 'HtmlParseError';
-	constructor(readonly string: string, readonly reason: unknown) {
+	constructor(
+		readonly string: string,
+		readonly reason: unknown,
+	) {
 		super('HtmlParseError');
 	}
 }

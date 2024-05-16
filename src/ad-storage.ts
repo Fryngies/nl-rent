@@ -1,5 +1,5 @@
 import { PlatformError } from '@effect/platform/Error';
-import * as S from '@effect/schema/Schema';
+import { Schema } from '@effect/schema';
 import * as TF from '@effect/schema/TreeFormatter';
 import * as KVS from '@effect/platform/KeyValueStore';
 import {
@@ -8,19 +8,25 @@ import {
 	Effect,
 	Layer,
 	Option,
-	ReadonlyArray,
 	flow,
 	MutableHashSet,
 	pipe,
+	Array,
 } from 'effect';
 import { AdId } from './ad';
 
-export const KeyValueCFStore = Context.Tag<KVS.KeyValueStore>();
+export class KVNamespaceTag extends Context.Tag('KVNamespace')<
+	KVNamespaceTag,
+	KVNamespace
+>() {}
 
-export const KVNamespace = Context.Tag<KVNamespace>();
+export class KeyValueCFStore extends Context.Tag('KeyValueCFStore')<
+	KeyValueCFStore,
+	KVS.KeyValueStore
+>() {}
 
 export const KeyValueCFStoreLive = Layer.function(
-	KVNamespace,
+	KVNamespaceTag,
 	KeyValueCFStore,
 	(kv) =>
 		KVS.make({
@@ -36,60 +42,55 @@ export const KeyValueCFStoreLive = Layer.function(
 		}),
 );
 
-export const AdIdStorage = Context.Tag<AdIdStorage>();
-
-export interface AdIdStorage {
-	put(ids: readonly AdId[]): Effect.Effect<never, PlatformError, AdId[]>;
-}
+export class AdIdStorage extends Context.Tag('AdIdStorage')<
+	AdIdStorage,
+	{
+		put(ids: readonly AdId[]): Effect.Effect<AdId[], PlatformError>;
+	}
+>() {}
 
 const SEP = ',';
 
 export const newAdIdStorageLive = (scope: string) =>
-	Effect.gen(function* (_) {
+	Effect.gen(function* () {
 		const storeKey = `ad-storage--${scope}`;
-		const store = yield* _(KeyValueCFStore);
+		const store = yield* KeyValueCFStore;
 
-		const set = yield* _(
-			pipe(
-				store.get(storeKey),
-				Effect.flatMap(
-					flow(
-						Option.getOrElse(() => ''),
-						String.split(SEP),
-						ReadonlyArray.partitionMap((v) => S.parseEither(AdId)(v)),
-						([es, rs]) =>
-							pipe(
-								es,
-								ReadonlyArray.match({
-									onEmpty: () => Effect.succeed<void>(undefined),
-									onNonEmpty: (es) =>
-										Effect.logWarning(
-											`Failed to parse some IDs from storage ${storeKey}, ignoring:\n${pipe(
-												es,
-												ReadonlyArray.map((es) => TF.formatErrors(es.errors)),
-												ReadonlyArray.join('\n\n'),
-											)}`,
-										),
-								}),
-								Effect.map(() => MutableHashSet.fromIterable(rs)),
-							),
-					),
+		const set = yield* pipe(
+			store.get(storeKey),
+			Effect.flatMap(
+				flow(
+					Option.getOrElse(() => ''),
+					String.split(SEP),
+					Array.partitionMap((v) => Schema.decodeEither(AdId)(v)),
+					([es, rs]) =>
+						pipe(
+							es,
+							Array.match({
+								onEmpty: () => Effect.succeed<void>(undefined),
+								onNonEmpty: (es) =>
+									Effect.logWarning(
+										`Failed to parse some IDs from storage ${storeKey}, ignoring:\n${pipe(
+											es,
+											Array.map(TF.formatErrorSync),
+											Array.join('\n\n'),
+										)}`,
+									),
+							}),
+							Effect.map(() => MutableHashSet.fromIterable(rs)),
+						),
 				),
 			),
 		);
-
 		const flush = () =>
-			store.set(
-				storeKey,
-				pipe(set, ReadonlyArray.fromIterable, ReadonlyArray.join(',')),
-			);
+			store.set(storeKey, pipe(set, Array.fromIterable, Array.join(',')));
 
 		return {
 			put: (ids: readonly AdId[]) =>
 				Effect.gen(function* (_) {
 					yield* _(Effect.logDebug(`current storage set: ${set.toString()}`));
 
-					const newAds = ReadonlyArray.filter(ids, (id) => {
+					const newAds = Array.filter(ids, (id) => {
 						const alreadyKnown = MutableHashSet.has(set, id);
 
 						MutableHashSet.add(set, id);

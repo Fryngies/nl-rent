@@ -1,29 +1,36 @@
-import * as S from '@effect/schema/Schema';
+import { Schema } from '@effect/schema';
 import { NonEmptyString } from './lib/schema';
 import { Option } from 'effect';
 
-export const AdId = S.string.pipe(S.pattern(/^[\d\w]+$/), S.brand('AdId'));
+export const AdId = Schema.String.pipe(
+	Schema.pattern(/^[\d\w]+$/),
+	Schema.brand('AdId'),
+);
 
-export type AdId = S.Schema.To<typeof AdId>;
+export type AdId = Schema.Schema.Type<typeof AdId>;
 
-export const Type = S.literal('sale', 'rent');
+export const Type = Schema.Literal('sale', 'rent');
 
-export type Type = S.Schema.To<typeof Type>;
+export type Type = Schema.Schema.Type<typeof Type>;
 
-export const AdStatus = S.literal('available', 'under negotiation', 'rented');
+export const AdStatus = Schema.Literal(
+	'available',
+	'under negotiation',
+	'rented',
+);
 
-export type AdStatus = S.Schema<typeof AdStatus>;
+export type AdStatus = Schema.Schema<typeof AdStatus>;
 
-export const PropertyType = S.literal('house', 'apartment');
+export const PropertyType = Schema.Literal('house', 'apartment');
 
-export type PropertyType = S.Schema.To<typeof PropertyType>;
+export type PropertyType = Schema.Schema.Type<typeof PropertyType>;
 
 export interface Address {
 	readonly title: string;
 	readonly city: string;
 }
 
-export const Address: S.Schema<Address> = S.struct({
+export const Address: Schema.Schema<Address> = Schema.Struct({
 	title: NonEmptyString,
 	city: NonEmptyString,
 });

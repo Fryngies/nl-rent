@@ -1,5 +1,5 @@
-import { String, Option, pipe, ReadonlyArray, Effect, flow } from 'effect';
-import * as S from '@effect/schema/Schema';
+import { String, Option, pipe, Effect, flow, Array } from 'effect';
+import { Schema } from '@effect/schema';
 import { HTMLElement } from 'node-html-parser';
 import { Ad, PropertyType, Type } from '../ad';
 import { AdId } from '../ad';
@@ -25,21 +25,21 @@ export const parseAd = (root: HTMLElement): Option.Option<Ad> => {
 
 			return pipe(
 				id,
-				S.parseOption(AdId),
+				Schema.decodeUnknownOption(AdId),
 				Option.map((id) => ({
 					url: `https://www.pararius.com${path}`,
 					id,
-					city: S.parseOption(S.string)(city).pipe(
+					city: Schema.decodeUnknownOption(Schema.String)(city).pipe(
 						Option.map(
 							flow(
 								String.split('-'),
-								ReadonlyArray.map(String.capitalize),
-								ReadonlyArray.join(' '),
+								Array.map(String.capitalize),
+								Array.join(' '),
 							),
 						),
 					),
-					type: S.parseOption(Type)(type),
-					propertyType: S.parseOption(PropertyType)(propertyType),
+					type: Schema.decodeUnknownOption(Type)(type),
+					propertyType: Schema.decodeUnknownOption(PropertyType)(propertyType),
 				})),
 			);
 		}),
@@ -48,7 +48,7 @@ export const parseAd = (root: HTMLElement): Option.Option<Ad> => {
 	const addressTitle = pipe(
 		// not a typo
 		root.querySelector(".listing-search-item__sub-title\\'")?.textContent,
-		S.parseOption(S.string),
+		Schema.decodeUnknownOption(Schema.String),
 		Option.map(String.trim),
 		Option.map(String.replaceAll(/\s+/g, ' ')),
 	);
@@ -61,17 +61,17 @@ export const parseAd = (root: HTMLElement): Option.Option<Ad> => {
 			return {
 				livingArea: pipe(
 					livingArea?.textContent,
-					S.parseOption(S.string),
+					Schema.decodeUnknownOption(Schema.String),
 					Option.flatMap(String.match(/^(\d+)/)),
-					Option.flatMap(ReadonlyArray.get(1)),
-					Option.flatMap(S.parseOption(S.NumberFromString)),
+					Option.flatMap(Array.get(1)),
+					Option.flatMap(Schema.decodeOption(Schema.NumberFromString)),
 				),
 				bedrooms: pipe(
 					bedrooms?.textContent,
-					S.parseOption(S.string),
+					Schema.decodeUnknownOption(Schema.String),
 					Option.flatMap(String.match(/^(\d+)/)),
-					Option.flatMap(ReadonlyArray.get(1)),
-					Option.flatMap(S.parseOption(S.NumberFromString)),
+					Option.flatMap(Array.get(1)),
+					Option.flatMap(Schema.decodeOption(Schema.NumberFromString)),
 				),
 			};
 		},
@@ -79,18 +79,18 @@ export const parseAd = (root: HTMLElement): Option.Option<Ad> => {
 
 	const pricePerMonth = pipe(
 		root.querySelector('.listing-search-item__price')?.textContent,
-		S.parseOption(S.string),
+		Schema.decodeUnknownOption(Schema.String),
 		Option.flatMap(String.match(/([\d,]+)/)),
-		Option.flatMap(ReadonlyArray.get(1)),
+		Option.flatMap(Array.get(1)),
 		Option.map(String.replace(',', '')),
-		Option.flatMap(S.parseOption(S.NumberFromString)),
+		Option.flatMap(Schema.decodeOption(Schema.NumberFromString)),
 	);
 
 	const photosUrls = pipe(
 		root.querySelector('img.picture__image'),
 		Option.fromNullable,
 		Option.flatMapNullable((e) => e.getAttribute('src')),
-		Option.map(ReadonlyArray.of),
+		Option.map(Array.of),
 	);
 
 	return pipe(
@@ -118,24 +118,20 @@ export const parseAd = (root: HTMLElement): Option.Option<Ad> => {
 };
 
 export const runFor = (url: string) =>
-	Effect.gen(function* (_) {
-		const response = yield* _(getText(url));
+	Effect.gen(function* () {
+		const response = yield* getText(url);
 
-		yield* _(Effect.logDebug(`${url} got response ${response}`));
+		yield* Effect.logDebug(`${url} got response ${response}`);
 
-		const node = yield* _(parseHtml(response));
+		const node = yield* parseHtml(response);
 
 		const results = node.querySelectorAll(
 			'.search-list li.search-list__item--listing',
 		);
 
-		yield* _(Effect.logDebug(`${results.length} items`));
+		yield* Effect.logDebug(`${results.length} items`);
 
-		const ads = pipe(
-			results,
-			ReadonlyArray.fromIterable,
-			ReadonlyArray.map(parseAd),
-		);
+		const ads = pipe(results, Array.fromIterable, Array.map(parseAd));
 
 		return ads;
 	});

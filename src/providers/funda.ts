@@ -1,12 +1,12 @@
-import { Effect, Option, ReadonlyArray, String, pipe } from 'effect';
+import { Effect, Option, String, pipe, Array, flow } from 'effect';
 import { HTMLElement } from 'node-html-parser';
-import * as S from '@effect/schema/Schema';
+import { Schema } from '@effect/schema';
 import { getText } from '../lib/http';
 import { parseHtml } from '../lib/html';
 import { NonEmptyString } from '../lib/schema';
 import { Ad, AdId, PropertyType, Type } from '../ad';
 
-export const FundaType = S.literal('koop', 'huur');
+export const FundaType = Schema.Literal('koop', 'huur');
 
 export type FundaType = 'koop' | 'huur';
 
@@ -15,7 +15,7 @@ const fundaTypeToTypeMap: Record<FundaType, Type> = {
 	huur: 'rent',
 };
 
-const FundaPropertyType = S.literal('huis', 'appartement');
+const FundaPropertyType = Schema.Literal('huis', 'appartement');
 
 type FundaPropertyType = 'huis' | 'appartement';
 
@@ -38,45 +38,64 @@ export const parseAd = (root: HTMLElement): Option.Option<Ad> => {
 
 	const imageUrl = pipe(
 		image,
-		Option.flatMap((b) => Option.fromNullable(b.querySelector('img'))),
-		Option.flatMap((b) => Option.fromNullable(b.getAttribute('srcset'))),
-		Option.flatMap((set) => pipe(set.split(','), ReadonlyArray.last)),
-		Option.map(String.replace(/ \d+\w$/, '')),
+		Option.flatMap((element) =>
+			Option.fromNullable(element.querySelector('img')),
+		),
+		Option.flatMap((element) =>
+			Option.fromNullable(element.getAttribute('srcset')),
+		),
+		Option.flatMap(
+			flow(
+				String.split(','),
+				Array.map(String.trim),
+				Array.map(String.replace(/ \d+\w$/, '')),
+				Array.last,
+			),
+		),
 	);
 
 	const urlInfo = pipe(
 		url,
-		Option.flatMap(
-			// https://www.funda.nl/detail/huur/amsterdam/appartement-frans-van-mierisstraat-69-ii/43448018/
-			String.match(
-				/https:\/\/www\.funda\.nl\/detail\/(\w+)\/([\w\d]+)\/(\w+)-[\w\d-]+\/([\d]+)/,
-			),
+		Option.flatMap((s) =>
+			Option.firstSomeOf([
+				// https://www.funda.nl/detail/huur/amsterdam/appartement-frans-van-mierisstraat-69-ii/43448018/
+				String.match(
+					/https:\/\/www\.funda\.nl\/detail\/(\w+)\/([\w\d]+)\/(\w+)-[\w\d-]+\/([\d]+)/,
+				)(s),
+				// https://www.funda.nl/huur/amsterdam/appartement-43597237-sassenheimstraat-7-2/
+				String.match(
+					/https:\/\/www\.funda\.nl\/(\w+)\/([\w\d]+)\/(\w+)-(\d+)-([\w\d-]+)/,
+				)(s),
+			]),
 		),
-		Option.flatMap((matches: unknown[]) => {
-			const [, type, city, propertyType, id] = matches;
+		Option.map(([, type, city, propertyType, id]) => ({
+			type,
+			city,
+			propertyType,
+			id,
+		})),
+		Option.flatMap((matches) => {
+			const { type, city, propertyType, id } = matches;
 
 			return pipe(
 				id,
-				S.parseOption(AdId),
+				Schema.decodeUnknownOption(AdId),
 				Option.map((id) => ({
 					id,
 					type: pipe(
 						type,
-						S.parseOption(FundaType),
+						Schema.decodeUnknownOption(FundaType),
 						Option.map((dt) => fundaTypeToTypeMap[dt]),
 					),
 					city: pipe(
 						city,
-						S.parseOption(NonEmptyString),
+						Schema.decodeUnknownOption(NonEmptyString),
 						Option.map(String.trim),
-						Option.map(
-							([first, ...rest]) =>
-								`${String.toUpperCase(first)}${ReadonlyArray.join(rest, '')}`,
-						),
+						Option.map(String.capitalize),
 					),
 					propertyType: pipe(
 						propertyType,
-						S.parseOption(FundaPropertyType),
+						Schema.decodeUnknownOption(FundaPropertyType),
 						Option.map((dpt) => fundaPropertyTypeToPropertyType[dpt]),
 					),
 				})),
@@ -89,27 +108,31 @@ export const parseAd = (root: HTMLElement): Option.Option<Ad> => {
 		(blocks) => {
 			const contents: unknown[] = pipe(
 				blocks,
-				ReadonlyArray.fromIterable,
-				ReadonlyArray.map((b) => b.textContent),
+				Array.fromIterable,
+				Array.map((b) => b.textContent),
 			);
 
 			return {
 				livingAreaM2: pipe(
 					contents[0],
-					S.parseOption(NonEmptyString),
+					Schema.decodeUnknownOption(NonEmptyString),
 					Option.map(String.replaceAll(/[^\d]+/g, '')),
-					Option.flatMap(S.parseOption(S.NumberFromString)),
+					Option.flatMap(Schema.decodeUnknownOption(Schema.NumberFromString)),
 				),
 				bedrooms: pipe(
 					contents[1],
-					S.parseOption(NonEmptyString),
-					Option.flatMap(S.parseOption(S.NumberFromString.pipe(S.int()))),
+					Schema.decodeUnknownOption(NonEmptyString),
+					Option.flatMap(
+						Schema.decodeUnknownOption(
+							Schema.NumberFromString.pipe(Schema.int()),
+						),
+					),
 				),
 				energyLabel: pipe(
 					contents[2],
-					S.parseOption(NonEmptyString),
+					Schema.decodeUnknownOption(NonEmptyString),
 					Option.map(String.trim),
-					Option.flatMap(S.parseOption(NonEmptyString)),
+					Option.flatMap(Schema.decodeUnknownOption(NonEmptyString)),
 				),
 			};
 		},
@@ -119,7 +142,7 @@ export const parseAd = (root: HTMLElement): Option.Option<Ad> => {
 		root.querySelector('[data-test-id="street-name-house-number"]'),
 		Option.fromNullable,
 		Option.map((e) => e.textContent),
-		Option.flatMap(S.parseOption(NonEmptyString)),
+		Option.flatMap(Schema.decodeOption(NonEmptyString)),
 		Option.map((s) => s.trim()),
 	);
 
@@ -128,7 +151,7 @@ export const parseAd = (root: HTMLElement): Option.Option<Ad> => {
 		Option.fromNullable,
 		Option.flatMap((s) => Option.fromNullable(s.textContent)),
 		Option.map(String.replaceAll(/[^\d]+/g, '')),
-		Option.flatMap(S.parseOption(S.NumberFromString)),
+		Option.flatMap(Schema.decodeOption(Schema.NumberFromString)),
 	);
 
 	return pipe(
@@ -146,7 +169,7 @@ export const parseAd = (root: HTMLElement): Option.Option<Ad> => {
 			bedrooms,
 			energyLabel,
 			pricePerMonth,
-			photosUrls: pipe(imageUrl, Option.map(ReadonlyArray.of)),
+			photosUrls: pipe(imageUrl, Option.map(Array.of)),
 			// TODO: Implement
 			desposit: Option.none(),
 			numberOfStories: Option.none(),
@@ -156,23 +179,20 @@ export const parseAd = (root: HTMLElement): Option.Option<Ad> => {
 	);
 };
 
+export const selectAds = (root: HTMLElement): HTMLElement[] =>
+	root.querySelectorAll(
+		'[componentid="search_result"] [data-test-id="search-result-item"]',
+	);
+
 export const runFor = (url: string) =>
-	Effect.gen(function* (_) {
-		const response = yield* _(getText(url));
+	Effect.gen(function* () {
+		const response = yield* getText(url);
 
-		yield* _(Effect.logDebug(`${url} got response ${response.slice(0, 20)}`));
+		yield* Effect.logDebug(`${url} got response ${response.slice(0, 20)}`);
 
-		const node = yield* _(parseHtml(response));
+		const root = yield* parseHtml(response);
 
-		const results = node.querySelectorAll(
-			'[componentid="search_result"] [data-test-id="search-result-item"]',
-		);
-
-		const ads = pipe(
-			results,
-			ReadonlyArray.fromIterable,
-			ReadonlyArray.map(parseAd),
-		);
+		const ads = pipe(root, selectAds, Array.fromIterable, Array.map(parseAd));
 
 		return ads;
 	});

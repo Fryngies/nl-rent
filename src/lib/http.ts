@@ -1,43 +1,37 @@
-import { Effect, pipe } from 'effect';
+import { HttpClient } from '@effect/platform';
+import { Context, Effect, Layer, Schedule, pipe } from 'effect';
+import { Scope } from 'effect/Scope';
 
-export class HttpRequestError extends Error {
-	readonly _tag = 'HttpError';
-	constructor(readonly e: unknown) {
-		super('HttpErrror');
-	}
-}
-
-export class HttpBadResponseError extends Error {
-	readonly _tag = 'HttpError';
-	constructor(readonly r: Response) {
-		super('HttpErrror');
-	}
-}
-
-export class HttpTextResponseParseError extends Error {
-	readonly _tag = 'HttpTextResponseParseError';
-	constructor(readonly r: Response) {
-		super('HttpTextResponseParseError');
-	}
-}
-
-export type HttpError =
-	| HttpRequestError
-	| HttpBadResponseError
-	| HttpTextResponseParseError;
-
-export const getText = (url: string) =>
-	pipe(
-		Effect.tryPromise((signal) => fetch(url, { signal })),
-		Effect.matchEffect({
-			onSuccess: (r) => {
-				if (!r.ok) return Effect.fail<HttpError>(new HttpBadResponseError(r));
-
-				return Effect.tryPromise({
-					try: () => r.text(),
-					catch: () => new HttpTextResponseParseError(r),
-				});
-			},
-			onFailure: (e) => Effect.fail(new HttpRequestError(e)),
+export class Fetch extends Context.Tag('Fetch')<
+	Fetch,
+	HttpClient.client.Client<
+		HttpClient.response.ClientResponse,
+		HttpClient.error.HttpClientError,
+		Scope
+	>
+>() {
+	static Live = Layer.effect(
+		this,
+		Effect.gen(function* () {
+			return (yield* HttpClient.client.Client).pipe(
+				HttpClient.client.filterStatusOk,
+				HttpClient.client.retry(
+					Schedule.exponential('1 seconds').pipe(
+						Schedule.compose(Schedule.recurs(3)),
+					),
+				),
+			);
 		}),
 	);
+}
+
+export const getText = (url: string) =>
+	Effect.gen(function* () {
+		const fetch = yield* Fetch;
+
+		return yield* pipe(
+			HttpClient.request.get(url),
+			fetch,
+			HttpClient.response.text,
+		);
+	});

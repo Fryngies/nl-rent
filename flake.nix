@@ -27,10 +27,10 @@
             pkgs.nodePackages.typescript-language-server
 
             (pkgs.wrangler.override {
-              version = "3.52.0";
+              version = "3.55.0";
               src = pkgs.fetchurl {
-                url = "https://registry.npmjs.org/wrangler/-/wrangler-3.52.0.tgz";
-                sha256 = "sha256-7N0Faul8XGjSWbyGXwFSgAe8K3pbYuAuSeY6TfslvL0=";
+                url = "https://registry.npmjs.org/wrangler/-/wrangler-3.55.0.tgz";
+                sha256 = "sha256-WonpMS6v7Kr2Eruu9Zh1+gP0Ii1ECkkkpC0FmHkXb7U=";
               };
             })
           ];

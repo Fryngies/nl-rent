@@ -1,39 +1,42 @@
 import * as HttpClient from '@effect/platform/HttpClient';
 import {
 	Effect,
-	Layer,
 	Option,
-	ReadonlyArray,
 	flow,
 	pipe,
 	String,
 	Logger,
 	LogLevel,
+	Array,
 } from 'effect';
 import { Ad } from './ad';
 import {
 	AdIdStorage,
-	KVNamespace,
+	KVNamespaceTag,
 	KeyValueCFStoreLive as KeyValueCFStoreLayer,
 	newAdIdStorageLive,
 } from './ad-storage';
 import { HtmlParseError } from './lib/html';
-import { HttpError } from './lib/http';
-import { TelegramChatService, newTelegramChatService } from './lib/telegram';
+import { TelegramChatService } from './lib/telegram';
 import * as Funda from './providers/funda';
-import * as Pararius from './providers/pararius';
+import { HttpClientError } from '@effect/platform/Http/ClientError';
+import { Fetch } from './lib/http';
 
 interface Source {
 	readonly url: string;
 	readonly process: (
 		url: string,
-	) => Effect.Effect<never, HttpError | HtmlParseError, Option.Option<Ad>[]>;
+	) => Effect.Effect<
+		Option.Option<Ad>[],
+		HttpClientError | HtmlParseError,
+		Fetch
+	>;
 }
 
 const funda = (url: string): Source => ({ url, process: Funda.runFor });
-const pararus = (url: string): Source => ({ url, process: Pararius.runFor });
+// const pararus = (url: string): Source => ({ url, process: Pararius.runFor });
 
-const FUNDA_SOURCES: readonly Source[] = ReadonlyArray.map(
+const FUNDA_SOURCES: readonly Source[] = Array.map(
 	[
 		'https://www.funda.nl/en/zoeken/huur?selected_area=["gemeente-amsterdam"]&price="1000-2500"&object_type=["house","apartment"]&publication_date="10"&floor_area="50-"&sort="date_down"',
 		'https://www.funda.nl/en/zoeken/huur?selected_area=["haarlem"]&price="1000-2500"&object_type=["house","apartment"]&publication_date="10"&floor_area="50-"&sort="date_down"',
@@ -43,15 +46,15 @@ const FUNDA_SOURCES: readonly Source[] = ReadonlyArray.map(
 	funda,
 );
 
-const PARARIUS_SOURCES: readonly Source[] = ReadonlyArray.map(
-	[
-		'https://www.pararius.com/apartments/amsterdam/1200-2500/2-bedrooms/50m2',
-		'https://www.pararius.com/apartments/haarlem/1200-2500/2-bedrooms/50m2',
-		'https://www.pararius.com/apartments/utrecht/1200-2500/2-bedrooms/50m2',
-		'https://www.pararius.com/apartments/amstelveen/1200-2500/2-bedrooms/50m2',
-	],
-	pararus,
-);
+// const PARARIUS_SOURCES: readonly Source[] = Array.map(
+// 	[
+// 		'https://www.pararius.com/apartments/amsterdam/1200-2500/2-bedrooms/50m2',
+// 		'https://www.pararius.com/apartments/haarlem/1200-2500/2-bedrooms/50m2',
+// 		'https://www.pararius.com/apartments/utrecht/1200-2500/2-bedrooms/50m2',
+// 		'https://www.pararius.com/apartments/amstelveen/1200-2500/2-bedrooms/50m2',
+// 	],
+// 	pararus,
+// );
 
 export interface Env {
 	// https://developers.cloudflare.com/workers/runtime-apis/kv/
@@ -79,8 +82,8 @@ const serializeAd = (ad: Ad) =>
 					),
 					Option.map(ad.address, (a) => tag(a.city)),
 				],
-				ReadonlyArray.compact,
-				ReadonlyArray.join(' '),
+				Array.getSomes,
+				Array.join(' '),
 				(s) => (s.length === 0 ? Option.none() : Option.some(s)),
 			),
 			Option.map(ad.pricePerMonth, (p) => `💶 ${p} per month`),
@@ -95,55 +98,48 @@ const serializeAd = (ad: Ad) =>
 					`\n📍 <a href="https://maps.google.com/?q=${a.city}, ${a.title}">${a.city}, ${a.title}</a>`,
 			),
 		],
-		ReadonlyArray.compact,
-		ReadonlyArray.join('\n'),
+		Array.getSomes,
+		Array.join('\n'),
 	);
 
 const task = (sources: readonly Source[]) =>
 	Effect.gen(function* (_) {
-		const ads = yield* _(
+		const maybeAds = yield* _(
 			pipe(
 				sources,
 				Effect.validateAll((source) =>
-					Effect.logInfo(`requesting ${source.url}`).pipe(
-						Effect.flatMap(() => source.process(source.url)),
-					),
+					Effect.gen(function* () {
+						yield* Effect.logInfo(`processing ${source.url}`);
+
+						return yield* source.process(source.url);
+					}),
 				),
-				Effect.map(ReadonlyArray.flatten),
+				Effect.map(Array.flatten),
 			),
 		);
+		const tgClient = yield* TelegramChatService;
+		const adStorage = yield* AdIdStorage;
 
-		const tgClient = yield* _(TelegramChatService);
-		const adStorage = yield* _(AdIdStorage);
+		const ads = pipe(maybeAds, Array.getSomes);
 
-		const compactedAds = pipe(ads, ReadonlyArray.compact);
+		const newIds = yield* adStorage.put(Array.map(ads, (ad) => ad.id));
+		const toPost = ads.filter((ad) => newIds.includes(ad.id));
 
-		const newIds = yield* _(
-			adStorage.put(ReadonlyArray.map(compactedAds, (ad) => ad.id)),
+		yield* Effect.logDebug(`parsed ${JSON.stringify(maybeAds)}`);
+		yield* Effect.logInfo(
+			`got: ${maybeAds.length}, failed: ${
+				maybeAds.length - Array.getSomes(maybeAds).length
+			}, new: ${toPost.length}`,
 		);
-		const toPost = compactedAds.filter((ad) => newIds.includes(ad.id));
+		yield* Effect.logDebug(`toPost: ${toPost}; newIds: ${newIds}`);
 
-		yield* _(Effect.logDebug(`parsed ${JSON.stringify(ads)}`));
-		yield* _(
-			Effect.logInfo(
-				`got: ${ads.length}, failed: ${
-					ads.length - ReadonlyArray.compact(ads).length
-				}, new: ${toPost.length}`,
-			),
-		);
-		yield* _(Effect.logDebug(`toPost: ${toPost}; newIds: ${newIds}`));
-
-		yield* _(
-			pipe(
-				Effect.partition(
-					toPost,
-					flow(
-						Effect.succeed,
-						Effect.tap((ad) => Effect.log(`posting ${ad.id} to Telegram`)),
-						Effect.map(serializeAd),
-						Effect.flatMap(tgClient.post),
-					),
-				),
+		yield* Effect.partition(
+			toPost,
+			flow(
+				Effect.succeed,
+				Effect.tap((ad) => Effect.log(`posting ${ad.id} to Telegram`)),
+				Effect.map(serializeAd),
+				Effect.flatMap(tgClient.post),
 			),
 		);
 	});
@@ -161,14 +157,18 @@ export default {
 
 		return Effect.all([funda, pararius], { concurrency: 'unbounded' }).pipe(
 			Effect.map(() => undefined),
+
 			Effect.provideServiceEffect(
 				TelegramChatService,
-				newTelegramChatService(env.BOT_TOKEN, env.CHAT_ID),
+				TelegramChatService.make(env.BOT_TOKEN, env.CHAT_ID),
 			),
-			Effect.provideLayer(
-				Layer.merge(KeyValueCFStoreLayer, HttpClient.client.layer),
-			),
-			Effect.provideService(KVNamespace, env.nlRentScrapper),
+
+			Effect.provide(Fetch.Live),
+			Effect.provide(HttpClient.client.layer),
+
+			Effect.provide(KeyValueCFStoreLayer),
+			Effect.provideService(KVNamespaceTag, env.nlRentScrapper),
+
 			Logger.withMinimumLogLevel(LogLevel.Debug),
 			Effect.runPromise,
 		);

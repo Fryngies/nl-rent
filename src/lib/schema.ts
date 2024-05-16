@@ -1,3 +1,3 @@
-import * as S from '@effect/schema/Schema';
+import { Schema } from '@effect/schema';
 
-export const NonEmptyString = S.string.pipe(S.nonEmpty());
+export const NonEmptyString = Schema.String.pipe(Schema.nonEmpty());
